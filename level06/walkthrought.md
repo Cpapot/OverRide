@@ -1,3 +1,17 @@
+# OverRide — Level06 Walkthrough
+
+## Binary Analysis
+
+The binary asks for two values:
+
+- a `login`,
+- a `serial`.
+
+It then calls `auth(login, serial)`. If the function returns `0`, it prints `Authenticated!` and spawns a shell.
+
+Decompiled code:
+
+```c
 int auth(char *login, uint serial)
 {
     int len;
@@ -8,7 +22,7 @@ int auth(char *login, uint serial)
     len = strnlen(login, 32);
     if (len < 6)
         return 1;
-    
+
     if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1) {
         puts("\x1b[32m.---------------------------.");
         puts("\x1b[31m| !! TAMPERING DETECTED !!  |");
@@ -25,7 +39,7 @@ int auth(char *login, uint serial)
 
     if (serial != bin)
         return 1;
-    
+
     return 0;
 }
 
@@ -53,32 +67,45 @@ int main(void)
         system("/bin/sh");
         return 0;
     }
-    
+
     return 1;
 }
+```
 
-main:
-we can see that the program ask a login and a serial, give it to the auth function and if auth return 0 it open a shell.
+## Exploitation Strategy
 
-auth:
-the auth function prevents us from using gdb with ptrace, then it take login data to create a uint and compare this uint with serial if equal the function return 1.
+The `auth()` function includes an anti-debug check (`ptrace`), but the serial generation logic is fully reversible.
 
-so we need to find a login and a serial that pass the auth function. to do so we gonna recode the part of the auth function who convert login into serial.
+So instead of debugging live, we can reimplement the serial computation in a helper program and generate the valid serial for any login.
 
-int main(int argc, char **argv)
-{
-    unsigned int bin;
-    int len;
+## Recreate Serial Calculation
 
-    len = strnlen(argv[1], 32);
-    if (len < 6)
-        return 1;
+After reimplementing the algorithm locally (see main.c):
 
-    bin = (argv[1][3] ^ 0x1337U) + 0x5eeded;
-    for (int i = 0; i < len; i++) {
-        if (argv[1][i] < 32 || argv[1][i] > 127)
-            return 1;
-        bin += (argv[1][i] ^ bin) % 1337;
-    }
-    printf("login: %s, serial: %d", argv[1], bin);
-}
+```bash
+level06@OverRide:/tmp$ ./a.out cpapot
+login: cpapot, serial: 6232800
+```
+
+## Use Valid Credentials
+
+```bash
+level06@OverRide:~$ ./level06
+***********************************
+*               level06           *
+***********************************
+-> Enter Login: cpapot
+***********************************
+***** NEW ACCOUNT DETECTED ********
+***********************************
+-> Enter Serial: 6232800
+Authenticated!
+$ whoami
+level07
+$ cat /home/users/level07/.pass
+GbcPDRgsFK77LNnnuh7QyFYA2942Gp8yKj9KrWD8
+```
+
+## Result
+
+Successfully authenticated as `level07` and retrieved the next password.

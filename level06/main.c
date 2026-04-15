@@ -16,5 +16,5 @@ int main(int argc, char **argv)
             return 1;
         bin += (argv[1][i] ^ bin) % 1337;
     }
-    printf("login: %s, serial: %d", argv[1], bin);
+    printf("login: %s, serial: %d\n", argv[1], bin);
 }

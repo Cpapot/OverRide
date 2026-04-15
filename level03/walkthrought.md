@@ -1,3 +1,19 @@
+# OverRide — Level03 Walkthrough
+
+## Binary Analysis
+
+The program:
+
+- asks for an integer password,
+- computes the difference between the input and a hardcoded value `0x1337d00d` (322424845),
+- if the difference is between 1 and 21, passes it to `decrypt()`,
+- otherwise, passes a random value,
+- `decrypt()` XOR-decrypts a string and compares it to `"Congratulations!"`,
+- if match, spawns a shell.
+
+Decompiled code:
+
+```c
 void clear_stdin(void) {
     char value = 0;
 
@@ -9,7 +25,7 @@ void clear_stdin(void) {
 }
 
 uint32_t get_unum(void) {
-    uint32_t user_value = 0; // EBP - 0xc
+    uint32_t user_value = 0;
 
     fflush(stdout);
     scanf("%u", &user_value);
@@ -17,13 +33,9 @@ uint32_t get_unum(void) {
     return user_value;
 }
 
-void prog_timeout() {
-    exit(1);
-}
-
 void decrypt(uint32_t rot) {
-    uint8_t buffer[] = "Q}|u`sfg~sf{}|a3"; // EBP - 0x1d
-    uint32_t len; // EBP - 0x24
+    uint8_t buffer[] = "Q}|u`sfg~sf{}|a3";
+    uint32_t len;
 
     len = strlen(buffer);
     for (uint32_t i = 0; i++; i < len) {
@@ -33,16 +45,15 @@ void decrypt(uint32_t rot) {
     if (!strncmp(buffer, "Congratulations!", 0x11)) {
         system("/bin/sh");
         return;
-    } 
+    }
     puts("\nInvalid Password");
 }
 
 void test(uint32_t user_pwd, uint32_t real_pwd) {
     uint32_t diff = real_pwd - user_pwd;
 
-    switch (diff)
-    {
-    case 0x1: // 1
+    switch (diff) {
+    case 0x1:
     case 0x2:
     case 0x3:
     case 0x4:
@@ -50,13 +61,13 @@ void test(uint32_t user_pwd, uint32_t real_pwd) {
     case 0x6:
     case 0x7:
     case 0x8:
-    case 0x9: // 9
-    case 0x10: // 16
+    case 0x9:
+    case 0x10:
     case 0x11:
     case 0x12:
     case 0x13:
     case 0x14:
-    case 0x15: // 21
+    case 0x15:
         decrypt(diff);
         break;
     default:
@@ -75,10 +86,45 @@ int main(int argc, char *argv[]) {
 
     printf("Password:");
     scanf("%d", &user_pwd);
-    test(user_pwd, 0x1337d00d); // 322424845
+    test(user_pwd, 0x1337d00d);
 }
+```
 
-in decrypt the diff between pass and 322424845 is use to XOR Cipher this string "Q}|u`sfg~sf{}|a3" for each index and the result is compared with "Congratulations!" if same open a shell.
-so if we input correct value (value should be between 322424845 and 322424845-21 to pass the test function switch case), with XOR cipher decryption tools we can find that if rot = 18 we can convert "Q}|u`sfg~sf{}|a3" to "Congratulations!".
+## Exploitation
 
-so 322424845 - 18 = 322424827 
+The vulnerability: the program only calls `decrypt()` with a valid (non-random) key if the difference is between 1 and 21. This allows us to test only 21 possible keys instead of billions.
+
+### Step 1: Find the Correct Key
+
+Using an XOR cipher tool (e.g., https://www.dcode.fr/xor-cipher), we test which key transforms the encrypted string into the plaintext:
+
+Encrypted: ``Q}|u`sfg~sf{}|a3``  
+Plaintext: `Congratulations!`
+
+Result: **key = 18**
+
+### Step 2: Calculate the Password
+
+```text
+password = 0x1337d00d - 18
+password = 322424845 - 18
+password = 322424827
+```
+
+## Execution
+
+```bash
+level03@OverRide:~$ ./level03
+***********************************
+*               level03         **
+***********************************
+Password:322424827
+$ whoami
+level04
+$ cat /home/users/level04/.pass
+kgv3tkEb9h2mLkRsPkXRfc2mHbjMxQzvb2FrgKkf
+```
+
+## Result
+
+Successfully gained shell access as `level04` and extracted the next level password.
