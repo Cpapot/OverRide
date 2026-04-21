@@ -6,7 +6,7 @@ The program:
 
 - asks for an integer password,
 - computes the difference between the input and a hardcoded value `0x1337d00d` (322424845),
-- if the difference is between 1 and 21, passes it to `decrypt()`,
+- if the difference is between [1;9] U [16;21] and, passes it to `decrypt()`,
 - otherwise, passes a random value,
 - `decrypt()` XOR-decrypts a string and compares it to `"Congratulations!"`,
 - if match, spawns a shell.

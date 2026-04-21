@@ -80,7 +80,7 @@ So instead of debugging live, we can reimplement the serial computation in a hel
 
 ## Recreate Serial Calculation
 
-After reimplementing the algorithm locally (see main.c):
+After reimplementing the algorithm locally (see main.c and compile with -std=c99):
 
 ```bash
 level06@OverRide:/tmp$ ./a.out cpapot

